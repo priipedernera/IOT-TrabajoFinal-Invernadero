@@ -121,4 +121,5 @@ Dashboard de Node-RED en `http://localhost:1880/dashboard` con:
 
 ## Autor
 
-Trabajo final de la materia IoT.
+Priscila Pedernera
+Emiliano Ojeda
