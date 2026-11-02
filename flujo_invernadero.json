@@ -1,0 +1,517 @@
+[
+  {
+    "id": "tab1",
+    "type": "tab",
+    "label": "Invernadero",
+    "disabled": false,
+    "info": ""
+  },
+  {
+    "id": "broker",
+    "type": "aedes broker",
+    "z": "tab1",
+    "name": "Broker MQTT",
+    "mqtt_port": 1883,
+    "mqtt_ws_bind": "port",
+    "mqtt_ws_port": "",
+    "mqtt_ws_path": "",
+    "cert": "",
+    "key": "",
+    "certname": "",
+    "keyname": "",
+    "dburl": "",
+    "usetls": false,
+    "x": 130,
+    "y": 60,
+    "wires": [
+      [],
+      []
+    ]
+  },
+  {
+    "id": "cfgmqtt",
+    "type": "mqtt-broker",
+    "name": "Local",
+    "broker": "localhost",
+    "port": "1883",
+    "clientid": "",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true
+  },
+  {
+    "id": "cfgdb",
+    "type": "sqlitedb",
+    "db": "invernadero.db",
+    "mode": "RWC"
+  },
+  {
+    "id": "ubase",
+    "type": "ui-base",
+    "name": "Invernadero",
+    "path": "/dashboard",
+    "includeClientData": true,
+    "acceptsClientConfig": [
+      "ui-notification",
+      "ui-control"
+    ],
+    "showPathInSidebar": false,
+    "navigationStyle": "default"
+  },
+  {
+    "id": "utheme",
+    "type": "ui-theme",
+    "name": "Tema",
+    "colors": {
+      "surface": "#ffffff",
+      "primary": "#2e7d32",
+      "bgPage": "#eeeeee",
+      "groupBg": "#ffffff",
+      "groupOutline": "#cccccc"
+    },
+    "sizes": {
+      "pagePadding": "12px",
+      "groupGap": "12px",
+      "groupBorderRadius": "4px",
+      "widgetGap": "12px"
+    }
+  },
+  {
+    "id": "upage",
+    "type": "ui-page",
+    "name": "Invernadero",
+    "ui": "ubase",
+    "path": "/",
+    "icon": "home",
+    "layout": "grid",
+    "theme": "utheme",
+    "order": 1,
+    "className": "",
+    "visible": "true",
+    "disabled": "false"
+  },
+  {
+    "id": "ugrp",
+    "type": "ui-group",
+    "name": "Sensores",
+    "page": "upage",
+    "width": "6",
+    "height": "1",
+    "order": 1,
+    "showTitle": true,
+    "className": "",
+    "visible": "true",
+    "disabled": "false"
+  },
+  {
+    "id": "init",
+    "type": "inject",
+    "z": "tab1",
+    "name": "Crear tabla",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "1",
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 130,
+    "y": 140,
+    "wires": [
+      [
+        "crear"
+      ]
+    ]
+  },
+  {
+    "id": "crear",
+    "type": "sqlite",
+    "z": "tab1",
+    "mydb": "cfgdb",
+    "sqlquery": "fixed",
+    "sql": "CREATE TABLE IF NOT EXISTS lecturas (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, temperatura REAL, humedad_suelo REAL, alerta INTEGER);",
+    "name": "CREATE TABLE",
+    "x": 330,
+    "y": 140,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "mqin",
+    "type": "mqtt in",
+    "z": "tab1",
+    "name": "invernadero/sensor",
+    "topic": "invernadero/sensor",
+    "qos": "0",
+    "datatype": "auto-detect",
+    "broker": "cfgmqtt",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 150,
+    "y": 240,
+    "wires": [
+      [
+        "decide"
+      ]
+    ]
+  },
+  {
+    "id": "decide",
+    "type": "function",
+    "z": "tab1",
+    "name": "Evaluar lectura",
+    "func": "const d = (typeof msg.payload === \"string\") ? JSON.parse(msg.payload) : msg.payload;\nconst alerta = d.humedad_suelo < 30 ? 1 : 0;\nconst db = { params: {\n    $fecha: d.fecha || new Date().toISOString(),\n    $temperatura: d.temperatura,\n    $humedad_suelo: d.humedad_suelo,\n    $alerta: alerta\n}};\nconst temp = { payload: d.temperatura, topic: \"Temperatura\" };\nconst suelo = { payload: d.humedad_suelo, topic: \"Humedad del suelo\" };\nconst txt = { payload: alerta ? \"ALERTA: suelo seco (\" + d.humedad_suelo + \"%) - regando\" : \"Todo normal\" };\nconst cmd = alerta ? { payload: \"REGAR\", topic: \"invernadero/comando\" } : null;\nreturn [db, temp, suelo, txt, cmd];",
+    "outputs": 5,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 360,
+    "y": 240,
+    "wires": [
+      [
+        "insert"
+      ],
+      [
+        "gtemp",
+        "ctemp"
+      ],
+      [
+        "gsuelo",
+        "csuelo"
+      ],
+      [
+        "utxt"
+      ],
+      [
+        "mqout"
+      ]
+    ]
+  },
+  {
+    "id": "insert",
+    "type": "sqlite",
+    "z": "tab1",
+    "mydb": "cfgdb",
+    "sqlquery": "prepared",
+    "sql": "INSERT INTO lecturas (fecha, temperatura, humedad_suelo, alerta) VALUES ($fecha, $temperatura, $humedad_suelo, $alerta);",
+    "name": "Guardar lectura",
+    "x": 600,
+    "y": 200,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "gtemp",
+    "type": "ui-gauge",
+    "z": "tab1",
+    "name": "Temperatura",
+    "group": "ugrp",
+    "order": 1,
+    "width": 3,
+    "height": 3,
+    "gtype": "gauge-half",
+    "gstyle": "needle",
+    "title": "Temperatura (°C)",
+    "units": "°C",
+    "icon": "",
+    "prefix": "",
+    "suffix": "",
+    "segments": [
+      {
+        "from": "0",
+        "color": "#5cd65c"
+      },
+      {
+        "from": "30",
+        "color": "#ffc800"
+      },
+      {
+        "from": "35",
+        "color": "#ea5353"
+      }
+    ],
+    "min": 0,
+    "max": 50,
+    "sizeThickness": 16,
+    "sizeGap": 4,
+    "sizeKeyThickness": 8,
+    "styleRounded": true,
+    "styleGlow": false,
+    "className": "",
+    "x": 600,
+    "y": 240,
+    "wires": []
+  },
+  {
+    "id": "gsuelo",
+    "type": "ui-gauge",
+    "z": "tab1",
+    "name": "Humedad suelo",
+    "group": "ugrp",
+    "order": 2,
+    "width": 3,
+    "height": 3,
+    "gtype": "gauge-half",
+    "gstyle": "needle",
+    "title": "Humedad del suelo (%)",
+    "units": "%",
+    "icon": "",
+    "prefix": "",
+    "suffix": "",
+    "segments": [
+      {
+        "from": "0",
+        "color": "#ea5353"
+      },
+      {
+        "from": "30",
+        "color": "#5cd65c"
+      },
+      {
+        "from": "80",
+        "color": "#4da6ff"
+      }
+    ],
+    "min": 0,
+    "max": 100,
+    "sizeThickness": 16,
+    "sizeGap": 4,
+    "sizeKeyThickness": 8,
+    "styleRounded": true,
+    "styleGlow": false,
+    "className": "",
+    "x": 600,
+    "y": 280,
+    "wires": []
+  },
+  {
+    "id": "ctemp",
+    "type": "ui-chart",
+    "z": "tab1",
+    "group": "ugrp",
+    "name": "Historial temperatura",
+    "label": "Historial temperatura",
+    "order": 3,
+    "chartType": "line",
+    "category": "topic",
+    "categoryType": "msg",
+    "xAxisLabel": "",
+    "xAxisProperty": "",
+    "xAxisPropertyType": "timestamp",
+    "xAxisType": "time",
+    "xAxisFormat": "",
+    "xAxisFormatType": "auto",
+    "yAxisLabel": "°C",
+    "yAxisProperty": "payload",
+    "yAxisPropertyType": "msg",
+    "ymin": "",
+    "ymax": "",
+    "action": "append",
+    "pointShape": "circle",
+    "pointRadius": 2,
+    "showLegend": true,
+    "removeOlder": 1,
+    "removeOlderUnit": "3600",
+    "removeOlderPoints": "50",
+    "colors": [
+      "#1f77b4",
+      "#ff7f0e"
+    ],
+    "width": 6,
+    "height": 5,
+    "className": "",
+    "interpolation": "linear",
+    "x": 620,
+    "y": 320,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "csuelo",
+    "type": "ui-chart",
+    "z": "tab1",
+    "group": "ugrp",
+    "name": "Historial humedad del suelo",
+    "label": "Historial humedad del suelo",
+    "order": 4,
+    "chartType": "line",
+    "category": "topic",
+    "categoryType": "msg",
+    "xAxisLabel": "",
+    "xAxisProperty": "",
+    "xAxisPropertyType": "timestamp",
+    "xAxisType": "time",
+    "xAxisFormat": "",
+    "xAxisFormatType": "auto",
+    "yAxisLabel": "%",
+    "yAxisProperty": "payload",
+    "yAxisPropertyType": "msg",
+    "ymin": "0",
+    "ymax": "100",
+    "action": "append",
+    "pointShape": "circle",
+    "pointRadius": 2,
+    "showLegend": true,
+    "removeOlder": 1,
+    "removeOlderUnit": "3600",
+    "removeOlderPoints": "50",
+    "colors": [
+      "#2e7d32",
+      "#ff7f0e"
+    ],
+    "width": 6,
+    "height": 5,
+    "className": "",
+    "interpolation": "linear",
+    "x": 620,
+    "y": 360,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "utxt",
+    "type": "ui-text",
+    "z": "tab1",
+    "group": "ugrp",
+    "order": 5,
+    "width": 6,
+    "height": 1,
+    "name": "Estado",
+    "label": "Estado",
+    "format": "{{msg.payload}}",
+    "layout": "row-spacing",
+    "style": false,
+    "font": "",
+    "fontSize": 16,
+    "color": "#717171",
+    "className": "",
+    "x": 590,
+    "y": 400,
+    "wires": []
+  },
+  {
+    "id": "mqout",
+    "type": "mqtt out",
+    "z": "tab1",
+    "name": "invernadero/comando",
+    "topic": "invernadero/comando",
+    "qos": "0",
+    "retain": "false",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "cfgmqtt",
+    "x": 620,
+    "y": 440,
+    "wires": []
+  },
+  {
+    "id": "h1",
+    "type": "http in",
+    "z": "tab1",
+    "name": "GET /api/lecturas",
+    "url": "/api/lecturas",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 520,
+    "wires": [
+      [
+        "q1"
+      ]
+    ]
+  },
+  {
+    "id": "q1",
+    "type": "sqlite",
+    "z": "tab1",
+    "mydb": "cfgdb",
+    "sqlquery": "fixed",
+    "sql": "SELECT * FROM lecturas ORDER BY id DESC LIMIT 20;",
+    "name": "Consulta",
+    "x": 370,
+    "y": 520,
+    "wires": [
+      [
+        "r1"
+      ]
+    ]
+  },
+  {
+    "id": "r1",
+    "type": "http response",
+    "z": "tab1",
+    "name": "",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "x": 570,
+    "y": 520,
+    "wires": []
+  },
+  {
+    "id": "h2",
+    "type": "http in",
+    "z": "tab1",
+    "name": "GET /api/alertas",
+    "url": "/api/alertas",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 150,
+    "y": 580,
+    "wires": [
+      [
+        "q2"
+      ]
+    ]
+  },
+  {
+    "id": "q2",
+    "type": "sqlite",
+    "z": "tab1",
+    "mydb": "cfgdb",
+    "sqlquery": "fixed",
+    "sql": "SELECT * FROM lecturas WHERE alerta = 1 ORDER BY id DESC LIMIT 50;",
+    "name": "Consulta",
+    "x": 370,
+    "y": 580,
+    "wires": [
+      [
+        "r2"
+      ]
+    ]
+  },
+  {
+    "id": "r2",
+    "type": "http response",
+    "z": "tab1",
+    "name": "",
+    "statusCode": "200",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "x": 570,
+    "y": 580,
+    "wires": []
+  }
+]
